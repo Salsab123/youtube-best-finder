@@ -241,16 +241,242 @@ def _default_api_key() -> str:
 # Streamlit UI
 # ---------------------------------------------------------------------------
 
-st.set_page_config(
-    page_title="YouTube Best Video Finder",
-    page_icon="🎯",
-    layout="wide",
-)
+SUGGESTED_TOPICS = [
+    "Python for beginners",
+    "Machine learning explained",
+    "React tutorial 2024",
+    "How to invest in stocks",
+    "Guitar lessons easy songs",
+    "Photoshop for beginners",
+]
 
-st.title("🎯 YouTube Best Video Finder")
-st.caption(
-    "Search any topic — we collect related YouTube videos and use AI to pick the single best one."
-)
+CONFIDENCE_META = {
+    "high": ("High confidence", "#22c55e", 95),
+    "medium": ("Medium confidence", "#eab308", 70),
+    "low": ("Low confidence", "#ef4444", 45),
+}
+
+
+def _thumb_url(video_id: str) -> str:
+    return f"https://img.youtube.com/vi/{video_id}/mqdefault.jpg"
+
+
+def _format_count(value: int | None) -> str:
+    if value is None:
+        return "—"
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if value >= 1_000:
+        return f"{value / 1_000:.1f}K"
+    return f"{value:,}"
+
+
+def inject_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        html, body, [class*="css"] {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .block-container {
+            padding-top: 1.5rem;
+            max-width: 1200px;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 45%, #0f3460 100%);
+            border-radius: 20px;
+            padding: 2.2rem 2rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+        }
+
+        .hero h1 {
+            color: #fff;
+            font-size: 2.2rem;
+            font-weight: 800;
+            margin: 0 0 0.5rem 0;
+            letter-spacing: -0.03em;
+        }
+
+        .hero p {
+            color: rgba(255,255,255,0.75);
+            font-size: 1.05rem;
+            margin: 0;
+        }
+
+        .hero-badge {
+            display: inline-block;
+            background: rgba(255,0,0,0.15);
+            color: #ff6b6b;
+            border: 1px solid rgba(255,80,80,0.35);
+            border-radius: 999px;
+            padding: 0.3rem 0.85rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin: 1.5rem 0 0.5rem 0;
+        }
+
+        .feature-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 1rem 1.1rem;
+            color: #fff;
+        }
+
+        .feature-card .icon { font-size: 1.5rem; margin-bottom: 0.4rem; }
+        .feature-card .title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.25rem; }
+        .feature-card .desc { color: rgba(255,255,255,0.6); font-size: 0.82rem; line-height: 1.4; }
+
+        .result-banner {
+            background: linear-gradient(90deg, #065f46, #047857);
+            border-radius: 14px;
+            padding: 1rem 1.25rem;
+            color: #ecfdf5;
+            font-weight: 600;
+            margin-bottom: 1.25rem;
+            border: 1px solid rgba(255,255,255,0.12);
+        }
+
+        .video-card {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 16px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+
+        .video-card:hover { border-color: #374151; }
+
+        .video-card.winner {
+            border-color: #22c55e;
+            box-shadow: 0 0 0 1px rgba(34,197,94,0.25), 0 8px 30px rgba(34,197,94,0.12);
+        }
+
+        .video-card .rank {
+            display: inline-block;
+            background: #1f2937;
+            color: #9ca3af;
+            border-radius: 8px;
+            padding: 0.15rem 0.55rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .video-card.winner .rank {
+            background: #14532d;
+            color: #86efac;
+        }
+
+        .video-card img {
+            width: 100%;
+            border-radius: 10px;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+        }
+
+        .video-card .title {
+            color: #f9fafb;
+            font-weight: 600;
+            font-size: 0.92rem;
+            margin: 0.6rem 0 0.3rem;
+            line-height: 1.35;
+        }
+
+        .video-card .meta {
+            color: #9ca3af;
+            font-size: 0.78rem;
+        }
+
+        .ai-box {
+            background: linear-gradient(160deg, #1e1b4b, #312e81);
+            border: 1px solid rgba(129,140,248,0.25);
+            border-radius: 16px;
+            padding: 1.25rem 1.4rem;
+            color: #e0e7ff;
+        }
+
+        .ai-box h3 {
+            color: #c7d2fe;
+            margin: 0 0 0.75rem 0;
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        .ai-box p {
+            color: rgba(224,231,255,0.9);
+            line-height: 1.6;
+            margin: 0;
+            font-size: 0.95rem;
+        }
+
+        .chip-label {
+            color: #6b7280;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin: 0.75rem 0 0.4rem 0;
+        }
+
+        div[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #0f172a, #111827);
+        }
+
+        div[data-testid="stSidebar"] * {
+            color: #e5e7eb !important;
+        }
+
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(90deg, #dc2626, #ef4444) !important;
+            border: none !important;
+            font-weight: 700 !important;
+            border-radius: 12px !important;
+            padding: 0.65rem 1.2rem !important;
+            box-shadow: 0 4px 20px rgba(239,68,68,0.35) !important;
+        }
+
+        .stButton > button[kind="secondary"] {
+            border-radius: 999px !important;
+            border: 1px solid #d1d5db !important;
+            font-size: 0.82rem !important;
+        }
+
+        @media (max-width: 768px) {
+            .feature-grid { grid-template-columns: 1fr; }
+            .hero h1 { font-size: 1.6rem; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def init_session_state() -> None:
+    defaults = {
+        "last_query": "",
+        "last_result": None,
+        "search_history": [],
+        "pending_query": "",
+        "trigger_search": False,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
 def find_best_video(
@@ -272,83 +498,237 @@ def find_best_video(
     return best, result, videos
 
 
+def render_hero() -> None:
+    st.markdown(
+        """
+        <div class="hero">
+            <div class="hero-badge">AI-Powered Video Discovery</div>
+            <h1>Find the single best YouTube video</h1>
+            <p>We search dozens of videos, analyze them with AI, and hand you the winner — no more endless scrolling.</p>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="icon">🔍</div>
+                    <div class="title">Smart Search</div>
+                    <div class="desc">Pulls real metadata from YouTube — titles, views, descriptions & more.</div>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🧠</div>
+                    <div class="title">AI Evaluation</div>
+                    <div class="desc">Compares every candidate and picks the one that best matches your intent.</div>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">🏆</div>
+                    <div class="title">One Winner</div>
+                    <div class="desc">No overwhelming lists — just the best video with a clear explanation why.</div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_video_card(video: VideoInfo, rank: int, is_winner: bool = False) -> None:
+    winner_class = " winner" if is_winner else ""
+    badge = "🏆 BEST PICK" if is_winner else f"#{rank}"
+    st.markdown(
+        f"""
+        <div class="video-card{winner_class}">
+            <span class="rank">{badge}</span>
+            <img src="{_thumb_url(video.video_id)}" alt="thumbnail"/>
+            <div class="title">{video.title}</div>
+            <div class="meta">{video.channel} · {_format_count(video.view_count)} views · {_format_duration(video.duration_seconds)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_results(
+    query: str,
+    best: VideoInfo,
+    evaluation: EvaluationResult,
+    all_videos: list[VideoInfo],
+    used_ai: bool,
+) -> None:
+    st.markdown(
+        f'<div class="result-banner">✅ Best match for <em>"{query}"</em> — evaluated {len(all_videos)} videos</div>',
+        unsafe_allow_html=True,
+    )
+
+    label, color, pct = CONFIDENCE_META.get(evaluation.confidence, ("Unknown", "#6b7280", 50))
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Views", _format_count(best.view_count))
+    m2.metric("Likes", _format_count(best.like_count))
+    m3.metric("Duration", _format_duration(best.duration_seconds))
+    m4.metric("AI Mode", "Smart" if used_ai else "Basic")
+
+    st.progress(pct / 100, text=f"{label} — {pct}%")
+
+    tab_winner, tab_compare, tab_ai = st.tabs(["🏆 Winner", "📊 All Candidates", "🧠 AI Analysis"])
+
+    with tab_winner:
+        left, right = st.columns([1.6, 1])
+        with left:
+            st.video(best.url)
+            st.link_button("▶ Open on YouTube", best.url, use_container_width=True, type="primary")
+        with right:
+            st.markdown(f"### {best.title}")
+            st.caption(f"📺 {best.channel}")
+            if best.description:
+                with st.expander("Video description", expanded=False):
+                    st.write(best.description[:600] + ("..." if len(best.description) > 600 else ""))
+
+    with tab_compare:
+        st.caption("All videos we found and evaluated for your search.")
+        cols = st.columns(3)
+        for i, video in enumerate(all_videos):
+            with cols[i % 3]:
+                render_video_card(video, i + 1, is_winner=video.video_id == best.video_id)
+                st.link_button("Watch", video.url, key=f"watch_{video.video_id}", use_container_width=True)
+
+    with tab_ai:
+        st.markdown(
+            f"""
+            <div class="ai-box">
+                <h3>Why this video won</h3>
+                <p>{evaluation.reasoning}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if evaluation.runner_up_title:
+            st.info(f"🥈 **Runner-up:** {evaluation.runner_up_title}")
+        if not used_ai:
+            st.warning("Using basic ranking. Add an OpenAI API key in the sidebar for smarter AI picks.")
+
+
+def run_search(query: str, api_key: str | None, use_ai: bool, max_results: int) -> None:
+    progress = st.progress(0, text="Starting search...")
+    try:
+        progress.progress(15, text="🔍 Searching YouTube...")
+        videos = search_videos(query, max_results=max_results)
+        if not videos:
+            raise RuntimeError("No videos found for this search. Try different keywords.")
+
+        progress.progress(55, text=f"📥 Collected {len(videos)} videos — analyzing...")
+        if use_ai and is_valid_api_key(api_key):
+            result = evaluate_videos(query, videos, api_key=api_key)
+            used_ai = True
+        else:
+            result = fallback_pick(query, videos)
+            used_ai = False
+
+        progress.progress(90, text="🏆 Picking the winner...")
+        best = next(v for v in videos if v.video_id == result.best_video_id)
+        progress.progress(100, text="Done!")
+
+        st.session_state.last_query = query
+        st.session_state.last_result = (best, result, videos, used_ai)
+        if query not in st.session_state.search_history:
+            st.session_state.search_history = ([query] + st.session_state.search_history)[:8]
+        st.balloons()
+    except Exception as exc:
+        st.error(f"Something went wrong: {exc}")
+    finally:
+        progress.empty()
+
+
+st.set_page_config(
+    page_title="YouTube Best Video Finder",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+init_session_state()
+inject_styles()
+
 with st.sidebar:
-    st.header("Settings")
+    st.markdown("### ⚙️ Settings")
     api_key = st.text_input(
         "OpenAI API Key",
         value=_default_api_key(),
         type="password",
-        help="Required for AI-powered evaluation. Get one at platform.openai.com/api-keys",
+        help="Required for AI-powered evaluation.",
     )
     key_ok = is_valid_api_key(api_key)
     if api_key and not key_ok:
-        st.warning("Invalid or placeholder API key. AI is off until you add a real key.")
-    use_ai = st.toggle("Use AI evaluation", value=key_ok, disabled=not key_ok)
-    max_results = st.slider("Videos to evaluate", min_value=5, max_value=25, value=15)
+        st.warning("Invalid key — using basic mode.")
+    use_ai = st.toggle("🧠 AI evaluation", value=key_ok, disabled=not key_ok)
+    max_results = st.slider("Videos to scan", 5, 25, 15)
+
     st.divider()
-    st.markdown(
-        "**How it works**\n"
-        "1. Search YouTube for related videos\n"
-        "2. Collect title, description, views, etc.\n"
-        "3. AI reviews all candidates\n"
-        "4. You get the single best pick"
-    )
-
-with st.form("search_form", clear_on_submit=False):
-    query = st.text_input(
-        "What do you want to learn or find?",
-        placeholder="e.g. Python list comprehensions tutorial for beginners",
-    )
-    submitted = st.form_submit_button("Find Best Video", type="primary", use_container_width=True)
-
-if submitted:
-    if not query.strip():
-        st.warning("Please enter a search query.")
+    st.markdown("**Recent searches**")
+    if st.session_state.search_history:
+        for past in st.session_state.search_history:
+            if st.button(f"↩ {past}", key=f"hist_{past}", use_container_width=True):
+                st.session_state.pending_query = past
+                st.session_state.trigger_search = True
+                st.rerun()
     else:
-        try:
-            with st.status("Working...", expanded=True) as status:
-                st.write("🔍 Searching YouTube...")
-                best, evaluation, all_videos = find_best_video(
-                    query.strip(),
-                    max_results=max_results,
-                    api_key=api_key or None,
-                    use_ai=use_ai,
-                )
-                status.update(label="Done!", state="complete", expanded=False)
+        st.caption("Your searches will appear here.")
 
-            st.success("Best video found!")
+    st.divider()
+    with st.expander("How it works"):
+        st.markdown(
+            "1. **Search** — finds related YouTube videos\n"
+            "2. **Collect** — gathers views, likes, descriptions\n"
+            "3. **Evaluate** — AI scores every candidate\n"
+            "4. **Win** — you get the single best pick"
+        )
 
-            col_video, col_info = st.columns([3, 2])
+render_hero()
 
-            with col_video:
-                st.subheader(best.title)
-                st.video(best.url)
-                st.link_button("Open on YouTube", best.url, use_container_width=True)
+# Quick-topic chips
+st.markdown('<p class="chip-label">Try a popular topic</p>', unsafe_allow_html=True)
+chip_cols = st.columns(len(SUGGESTED_TOPICS))
+for i, topic in enumerate(SUGGESTED_TOPICS):
+    with chip_cols[i]:
+        if st.button(topic, key=f"chip_{i}", use_container_width=True):
+            st.session_state.pending_query = topic
+            st.session_state.trigger_search = True
+            st.rerun()
 
-            with col_info:
-                st.markdown("### Why this video?")
-                confidence_colors = {"high": "🟢", "medium": "🟡", "low": "🔴"}
-                icon = confidence_colors.get(evaluation.confidence, "⚪")
-                st.markdown(f"**Confidence:** {icon} {evaluation.confidence.title()}")
-                st.write(evaluation.reasoning)
-                if evaluation.runner_up_title:
-                    st.markdown(f"**Runner-up:** {evaluation.runner_up_title}")
+# Main search bar
+search_col, btn_col = st.columns([5, 1])
+with search_col:
+    query_input = st.text_input(
+        "Search",
+        value=st.session_state.pending_query or st.session_state.last_query,
+        placeholder="What do you want to learn? e.g. Python data analysis tutorial",
+        label_visibility="collapsed",
+    )
+with btn_col:
+    search_clicked = st.button("Search", type="primary", use_container_width=True)
 
-                st.divider()
-                st.markdown("**Channel**")
-                st.write(best.channel)
-                st.markdown("**Stats**")
-                views = f"{best.view_count:,}" if best.view_count else "—"
-                likes = f"{best.like_count:,}" if best.like_count else "—"
-                st.write(f"Views: {views} · Likes: {likes}")
+# Handle search triggers
+active_query = ""
+if search_clicked and query_input.strip():
+    active_query = query_input.strip()
+elif st.session_state.trigger_search and st.session_state.pending_query:
+    active_query = st.session_state.pending_query.strip()
 
-            with st.expander(f"All {len(all_videos)} videos evaluated", expanded=False):
-                for i, video in enumerate(all_videos, start=1):
-                    marker = " ✅" if video.video_id == best.video_id else ""
-                    st.markdown(f"**{i}. {video.title}**{marker}")
-                    st.caption(f"{video.channel} · {video.url}")
+st.session_state.trigger_search = False
+st.session_state.pending_query = ""
 
-        except Exception as exc:
-            st.error(f"Something went wrong: {exc}")
-else:
-    st.info("Enter a topic above and click **Find Best Video** to get started.")
+if active_query:
+    run_search(active_query, api_key or None, use_ai, max_results)
+
+# Show cached results (persists across chip clicks / reruns until new search)
+if st.session_state.last_result:
+    best, evaluation, all_videos, used_ai = st.session_state.last_result
+    st.divider()
+    render_results(st.session_state.last_query, best, evaluation, all_videos, used_ai)
+elif not active_query:
+    st.markdown("---")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("#### 🎬 Learn anything")
+        st.caption("Tutorials, courses, how-tos — any topic on YouTube.")
+    with c2:
+        st.markdown("#### ⚡ Save time")
+        st.caption("Skip watching 10 mediocre videos. Get the best one instantly.")
+    with c3:
+        st.markdown("#### 🔑 Add AI key")
+        st.caption("Paste your OpenAI key in the sidebar for smarter results.")
