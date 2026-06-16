@@ -11,7 +11,7 @@ from typing import Any
 import streamlit as st
 import yt_dlp
 from dotenv import load_dotenv
-from openai import AuthenticationError, OpenAI
+from openai import AuthenticationError, OpenAI, RateLimitError
 
 load_dotenv()
 
@@ -189,6 +189,11 @@ def evaluate_videos(
         raise ValueError(
             "Invalid OpenAI API key. Create a new key at "
             "https://platform.openai.com/api-keys and update the sidebar."
+        ) from exc
+    except RateLimitError as exc:
+        raise ValueError(
+            "OpenAI quota exceeded for this API key. Add billing/credits at "
+            "https://platform.openai.com/settings/organization/billing/overview."
         ) from exc
 
     data = _parse_response(response.choices[0].message.content or "{}")
@@ -556,14 +561,22 @@ def render_results(
         unsafe_allow_html=True,
     )
 
-    label, color, pct = CONFIDENCE_META.get(evaluation.confidence, ("Unknown", "#6b7280", 50))
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Views", _format_count(best.view_count))
     m2.metric("Likes", _format_count(best.like_count))
     m3.metric("Duration", _format_duration(best.duration_seconds))
     m4.metric("AI Mode", "Smart" if used_ai else "Basic")
 
-    st.progress(pct / 100, text=f"{label} — {pct}%")
+    if used_ai:
+        label, _, pct = CONFIDENCE_META.get(
+            evaluation.confidence, ("Unknown", "#6b7280", 50)
+        )
+        st.progress(pct / 100, text=f"AI {label} — {pct}%")
+    else:
+        st.info(
+            "**Basic mode** — ranking uses title keywords + views/likes only. "
+            "Add an OpenAI API key in the sidebar and enable **AI evaluation** for high-confidence picks."
+        )
 
     tab_winner, tab_compare, tab_ai = st.tabs(["🏆 Winner", "📊 All Candidates", "🧠 AI Analysis"])
 
@@ -613,8 +626,14 @@ def run_search(query: str, api_key: str | None, use_ai: bool, max_results: int) 
 
         progress.progress(55, text=f"📥 Collected {len(videos)} videos — analyzing...")
         if use_ai and is_valid_api_key(api_key):
-            result = evaluate_videos(query, videos, api_key=api_key)
-            used_ai = True
+            try:
+                result = evaluate_videos(query, videos, api_key=api_key)
+                used_ai = True
+            except ValueError as exc:
+                # Graceful fallback when key is invalid or quota is exhausted.
+                st.warning(f"{exc} Switched to Basic mode for this search.")
+                result = fallback_pick(query, videos)
+                used_ai = False
         else:
             result = fallback_pick(query, videos)
             used_ai = False
